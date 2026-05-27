@@ -2901,6 +2901,35 @@ class SpackSolverSetup:
 
                 spack.spec.Spec.ensure_valid_variants(s)
 
+    def compute_estimated_depths(self, specs: Sequence[spack.spec.Spec]) -> Dict[str, int]:
+        # runs bfs on possible graph to compute estimated depths
+        graph = self.possible_graph.possible_dependencies(
+            *specs,
+            allowed_deps=dt.ALL,
+            transitive=True,
+            expand_virtuals=True
+        )
+
+        depths: Dict[str, int] = {}
+        queue = collections.deque()
+
+        # Initialize roots at depth 0
+        for spec in specs:
+            depths[spec.name] = 0
+            queue.append((spec.name, 0))
+
+        while queue:
+            pkg_name, current_depth = queue.popleft()
+
+            dependencies = graph.edges.get(pkg_name, set())
+            for dependency in dependencies:
+                new_depth = current_depth + 1
+                if dependency not in depths or depths[dependency] > new_depth:
+                    depths[dependency] = new_depth
+                    queue.append((dependency, new_depth))
+
+        return depths
+
     def setup(
         self,
         specs: Sequence[spack.spec.Spec],
@@ -3079,6 +3108,12 @@ class SpackSolverSetup:
 
         self.gen.h1("Target Constraints")
         self.define_target_constraints()
+
+        self.gen.h1("Estimated Package Depths")
+        estimated_depths = self.compute_estimated_depths(specs)
+        for pkg_name, depth in sorted(estimated_depths.items()):
+            self.gen.fact(fn.estimated_depth(pkg_name, depth))
+        self.gen.newline()
 
         # once we've done a full traversal and know possible versions, check that the
         # requested solve is at least consistent.
