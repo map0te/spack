@@ -2924,7 +2924,10 @@ class SpackSolverSetup:
                 spack.spec.Spec.ensure_valid_variants(s)
 
     def compute_estimated_depths(self, specs: Sequence[spack.spec.Spec]) -> Dict[str, int]:
-        # runs bfs on possible graph to compute estimated depths
+        # runs bfs on possible graph to compute estimated depths (maxdepth)
+        # stops exploring when we encounter a cycle (node already in current path)
+        # clamps all depths to MAX_DEPTH
+        MAX_DEPTH = 3
         graph = self.possible_graph.possible_dependencies(
             *specs,
             allowed_deps=dt.ALL,
@@ -2938,17 +2941,24 @@ class SpackSolverSetup:
         # Initialize roots at depth 0
         for spec in specs:
             depths[spec.name] = 0
-            queue.append((spec.name, 0))
+            queue.append((spec.name, 0, frozenset([spec.name])))  # Add path tracking
 
         while queue:
-            pkg_name, current_depth = queue.popleft()
+            pkg_name, current_depth, path = queue.popleft()
 
             dependencies = graph.edges.get(pkg_name, set())
             for dependency in dependencies:
-                new_depth = current_depth + 1
-                if dependency not in depths or depths[dependency] > new_depth:
+                new_depth = min(current_depth + 1, MAX_DEPTH)
+
+                # If we've seen this dependency in the current path, it's a cycle - stop here
+                if dependency in path:
+                    continue
+
+                # Update to maxdepth and continue exploring if we found a longer path
+                if dependency not in depths or depths[dependency] < new_depth:
                     depths[dependency] = new_depth
-                    queue.append((dependency, new_depth))
+                    new_path = path | {dependency}
+                    queue.append((dependency, new_depth, new_path))
 
         return depths
 
@@ -3133,11 +3143,14 @@ class SpackSolverSetup:
         self.gen.h1("Target Constraints")
         self.define_target_constraints()
 
+        print("here")
         self.gen.h1("Estimated Package Depths")
         estimated_depths = self.compute_estimated_depths(specs)
+        print("computed")
         for pkg_name, depth in sorted(estimated_depths.items()):
-            self.gen.fact(fn.estimated_depth(pkg_name, depth))
+            self.gen.fact(fn.level(pkg_name, depth))
         self.gen.newline()
+        print("done")
 
         # once we've done a full traversal and know possible versions, check that the
         # requested solve is at least consistent.
