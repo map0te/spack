@@ -102,34 +102,24 @@ DEFAULT_OUTPUT_CONFIGURATION = OutputConfiguration(
     timers=False, stats=False, out=None, setup_only=False
 )
 
-
-# Below numbers are used to map names of criteria to the order
-# they appear in the solution. See concretize.lp
-
-# The space of possible priorities for optimization targets
-# is partitioned in the following ranges:
-#
-# [0-100) Optimization criteria for software being reused
-# [100-200) Fixed criteria that are higher priority than reuse, but lower than build
-# [200-300) Optimization criteria for software being built
-# [300-1000) High-priority fixed criteria
-# [1000-inf) Error conditions
-#
-# Each optimization target is a minimization with optimal value 0.
-
-#: High fixed priority offset for criteria that supersede all build criteria
-high_fixed_priority_offset = 300
-
-#: Priority offset for "build" criteria (regular criterio shifted to
-#: higher priority for specs we have to build)
-build_priority_offset = 200
-
-#: Priority offset of "fixed" criteria (those w/o build criteria)
-fixed_priority_offset = 100
+# TODO: documentation about new priority values
 
 # type aliases for the data structures we get back from the solver
 SpecDict = Dict[NodeId, spack.spec.Spec]
 SpliceDict = Dict[spack.spec.Spec, List[spack.solver.splicing.Splice]]
+
+class SolverPriorityConstants(NamedTuple):
+    """A named tuple describing solver optimization priority constants."""
+    max_depth: int
+    level_opt: int
+    indep_opt: int
+    low_offset: int
+    concr_offset: int
+    hinge_offset: int
+    built_offset: int
+    high_offset: int
+    error_offset: int
+    fixed_offset: int
 
 
 class OptimizationKind:
@@ -152,24 +142,50 @@ class OptimizationCriteria(NamedTuple):
     kind: OptimizationKind
 
 
-def build_criteria_names(costs, arg_tuples):
-    """Construct an ordered mapping from criteria names to costs."""
+def build_criteria_names(costs, arg_tuples, prio_constants):
     # pull optimization criteria names out of the solution
     priorities_names = []
 
     for args in arg_tuples:
-        priority, name = args[:2]
-        priority = int(priority)
+        order_index, location, opt_type, name = args[:4]
+        order_index = int(order_index)
 
-        # Add the priority of this opt criterion and its name
-        if priority < fixed_priority_offset:
-            # if the priority is less than fixed_priority_offset, then it
-            # has an associated build priority -- the same criterion but for
-            # nodes that we have to build.
-            priorities_names.append((priority, name, OptimizationKind.CONCRETE))
-            build_priority = priority + build_priority_offset
-            priorities_names.append((build_priority, name, OptimizationKind.BUILD))
+        # Compute the actual priority based on location first, then type
+        if location == "error":
+            priority = prio_constants.error_offset + order_index
+            priorities_names.append((priority, name, OptimizationKind.OTHER))
+        elif location == "high":
+            priority = prio_constants.high_offset + order_index
+            priorities_names.append((priority, name, OptimizationKind.OTHER))
+        elif location == "hinge":
+            priority = prio_constants.hinge_offset + order_index
+            priorities_names.append((priority, name, OptimizationKind.OTHER))
+        elif location == "low":
+            priority = prio_constants.low_offset + order_index
+            priorities_names.append((priority, name, OptimizationKind.OTHER))
+        elif location == "built":
+            # Built-only criteria
+            if opt_type == "fixed":
+                priority = prio_constants.built_offset + prio_constants.fixed_offset + order_index
+                priorities_names.append((priority, name, OptimizationKind.BUILD))
+            elif opt_type == "level":
+                for level in range(prio_constants.max_depth):
+                    level_mult = level * prio_constants.level_opt
+                    priority = prio_constants.built_offset + level_mult + order_index
+                    priorities_names.append((priority, name, OptimizationKind.BUILD))
+        elif location in ("concrete", "concr"):
+            # Concrete-only criteria
+            if opt_type == "fixed":
+                priority = prio_constants.concr_offset + prio_constants.fixed_offset + order_index
+                priorities_names.append((priority, name, OptimizationKind.CONCRETE))
+            elif opt_type == "level":
+                for level in range(prio_constants.max_depth):
+                    level_mult = level * prio_constants.level_opt
+                    priority = prio_constants.concr_offset + level_mult + order_index
+                    priorities_names.append((priority, name, OptimizationKind.CONCRETE))
         else:
+            # Fallback for unknown locations
+            priority = order_index
             priorities_names.append((priority, name, OptimizationKind.OTHER))
 
     # sort the criteria by priority
@@ -376,6 +392,9 @@ class Result:
 
         # names of optimization criteria
         self.criteria = []
+
+        # priority constants for organizing output
+        self.prio_constants = None
 
         # Abstract user requests
         self.abstract_specs = specs
@@ -986,7 +1005,20 @@ class PyclingoDriver:
 
         # get optimization criteria
         criteria_args = extract_args(best_model, "opt_criterion")
-        result.criteria = build_criteria_names(min_cost, criteria_args)
+        prio_constants = SolverPriorityConstants(
+            self.control.get_const("max_depth").number,
+            self.control.get_const("level_opt").number,
+            self.control.get_const("indep_opt").number,
+            self.control.get_const("low_offset").number,
+            self.control.get_const("concr_offset").number,
+            self.control.get_const("hinge_offset").number,
+            self.control.get_const("built_offset").number,
+            self.control.get_const("high_offset").number,
+            self.control.get_const("error_offset").number,
+            self.control.get_const("fixed_offset").number
+        )
+        result.criteria = build_criteria_names(min_cost, criteria_args, prio_constants)
+        result.prio_constants = prio_constants
 
         # record the number of models the solver considered
         result.nmodels = len(models)
