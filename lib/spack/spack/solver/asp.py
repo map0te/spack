@@ -2926,7 +2926,7 @@ class SpackSolverSetup:
     def compute_estimated_depths(self, specs: Sequence[spack.spec.Spec]) -> Dict[str, int]:
         # runs bfs on possible graph to compute estimated depths (maxdepth)
         # stops exploring when we encounter a cycle (node already in current path)
-        # clamps all depths to MAX_DEPTH
+        # roots have MAX_DEPTH, deeper nodes have lower depths (reversed)
         MAX_DEPTH = 3
         graph = self.possible_graph.possible_dependencies(
             *specs,
@@ -2938,7 +2938,7 @@ class SpackSolverSetup:
         depths: Dict[str, int] = {}
         queue = collections.deque()
 
-        # Initialize roots at depth 0
+        # Initialize roots at depth 0 (will be reversed to MAX_DEPTH later)
         for spec in specs:
             depths[spec.name] = 0
             queue.append((spec.name, 0, frozenset([spec.name])))  # Add path tracking
@@ -2948,7 +2948,7 @@ class SpackSolverSetup:
 
             dependencies = graph.edges.get(pkg_name, set())
             for dependency in dependencies:
-                new_depth = min(current_depth + 1, MAX_DEPTH)
+                new_depth = current_depth + 1
 
                 # If we've seen this dependency in the current path, it's a cycle - stop here
                 if dependency in path:
@@ -2960,7 +2960,9 @@ class SpackSolverSetup:
                     new_path = path | {dependency}
                     queue.append((dependency, new_depth, new_path))
 
-        return depths
+        # Reverse depths: roots get MAX_DEPTH, deeper nodes get lower values, clamped at 0
+        reversed_depths = {pkg: max(0, MAX_DEPTH - depth) for pkg, depth in depths.items()}
+        return reversed_depths
 
     def setup(
         self,
@@ -3146,7 +3148,7 @@ class SpackSolverSetup:
         self.gen.h1("Estimated Package Depths")
         estimated_depths = self.compute_estimated_depths(specs)
         for pkg_name, depth in sorted(estimated_depths.items()):
-            self.gen.fact(fn.level(pkg_name, depth))
+            self.gen.fact(fn.level(fn.node(0, pkg_name), depth))
         self.gen.newline()
 
         # once we've done a full traversal and know possible versions, check that the
