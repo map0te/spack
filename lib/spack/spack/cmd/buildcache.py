@@ -8,7 +8,7 @@ import json
 import os
 import sys
 import tempfile
-from typing import List, Optional, Tuple
+from typing import List, Mapping, Optional, Tuple
 
 import spack.binary_distribution
 import spack.cmd
@@ -17,7 +17,6 @@ import spack.config
 import spack.deptypes as dt
 import spack.environment as ev
 import spack.error
-import spack.llnl.util.tty as tty
 import spack.mirrors.mirror
 import spack.oci.image
 import spack.oci.oci
@@ -31,9 +30,11 @@ from spack import traverse
 from spack.binary_distribution import BINARY_INDEX
 from spack.cmd import display_specs
 from spack.cmd.common import arguments
-from spack.llnl.string import plural
-from spack.llnl.util.lang import elide_list, stable_partition
+from spack.llnl.util import tty
+from spack.llnl.util.tty import colify
 from spack.spec import Spec, save_dependency_specfiles
+from spack.util.lang import elide_list, stable_partition
+from spack.util.string import plural
 
 from ..buildcache_migrate import migrate
 from ..buildcache_prune import prune_buildcache
@@ -199,6 +200,13 @@ def setup_parser(subparser: argparse.ArgumentParser):
     )
     keys.add_argument("-t", "--trust", action="store_true", help="trust all downloaded keys")
     keys.add_argument("-f", "--force", action="store_true", help="force new download of keys")
+    arguments.add_common_arguments(keys, ["yes_to_all"])
+    keys.add_argument(
+        "mirrors",
+        nargs=argparse.REMAINDER,
+        type=arguments.mirror_name_or_url,
+        help="mirror name, path, or URL",
+    )
     keys.set_defaults(func=keys_fn, subparser=keys)
 
     # Check if binaries need to be rebuilt on remote mirror
@@ -401,21 +409,42 @@ def _format_spec(spec: Spec) -> str:
     return spec.cformat("{name}{@version}{/hash:7}")
 
 
-def _skip_no_redistribute_for_public(specs):
-    remaining_specs = list()
-    removed_specs = list()
+def _skip_no_redistribute_for_public(specs: List[Spec]) -> List[Spec]:
+    remaining_specs: List[Spec] = []
+    removed_specs: List[Spec] = []
     for spec in specs:
         if spec.package.redistribute_binary:
             remaining_specs.append(spec)
         else:
             removed_specs.append(spec)
     if removed_specs:
-        colified_output = tty.colify.colified(list(s.name for s in removed_specs), indent=4)
+        colified_output = colify.colified([s.name for s in removed_specs], indent=4)
         tty.debug(
             "The following specs will not be added to the binary cache"
             " because they cannot be redistributed:\n"
             f"{colified_output}\n"
             "You can use `--private` to include them."
+        )
+    return remaining_specs
+
+
+def _filter_specs_for_push(specs: List[Spec], mirror: spack.mirrors.mirror.Mirror) -> List[Spec]:
+    """Filter specs based on mirror include/exclude buildcache patterns."""
+    remaining_specs: List[Spec] = []
+    removed_specs: List[Spec] = []
+
+    for spec in specs:
+        if mirror.matches_binary(spec, direction="push"):
+            remaining_specs.append(spec)
+        else:
+            removed_specs.append(spec)
+
+    if removed_specs:
+        colified_output = colify.colified([s.name for s in removed_specs], indent=4)
+        tty.debug(
+            "The following specs will not be pushed to the binary cache"
+            " because they do not match the mirror's include/exclude filters:\n"
+            f"{colified_output}"
         )
     return remaining_specs
 
@@ -511,6 +540,8 @@ def push_fn(args):
 
     if not args.private:
         specs = _skip_no_redistribute_for_public(specs)
+
+    specs = _filter_specs_for_push(specs, mirror)
 
     if len(specs) > 1:
         tty.info(f"Selected {len(specs)} specs to push to {push_url}")
@@ -626,7 +657,13 @@ def list_fn(args):
 
 def keys_fn(args):
     """get public keys available on mirrors"""
-    spack.binary_distribution.get_keys(args.install, args.trust, args.force)
+    mirror_map: Optional[Mapping[str, spack.mirrors.mirror.Mirror]] = None
+    if args.mirrors:
+        mirror_map = dict([(m.name, m) for m in args.mirrors])
+
+    spack.binary_distribution.get_keys(
+        args.yes_to_all, args.install, args.trust, args.force, mirrors=mirror_map
+    )
 
 
 def check_fn(args: argparse.Namespace):

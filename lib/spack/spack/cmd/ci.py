@@ -20,13 +20,13 @@ import spack.environment as ev
 import spack.error
 import spack.fetch_strategy
 import spack.hash_types as ht
-import spack.llnl.util.filesystem as fs
 import spack.llnl.util.tty.color as clr
 import spack.mirrors.mirror
 import spack.package_base
 import spack.repo
 import spack.spec
 import spack.stage
+import spack.util.filesystem as fs
 import spack.util.git
 import spack.util.gpg as gpg_util
 import spack.util.timer as timer
@@ -318,7 +318,7 @@ def ci_rebuild(args):
     # Fail early if signing is required but we don't have a signing key
     sign_binaries = require_signing is not None and require_signing.lower() == "true"
     if sign_binaries and not spack_ci.can_sign_binaries():
-        gpg_util.list(False, True)
+        gpg_util.glist(False, True)
         tty.die("SPACK_REQUIRE_SIGNING=True => spack must have exactly one signing key")
 
     # Construct absolute paths relative to current $CI_PROJECT_DIR
