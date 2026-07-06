@@ -3143,14 +3143,11 @@ class SpackSolverSetup:
         self.gen.h1("Target Constraints")
         self.define_target_constraints()
 
-        print("here")
         self.gen.h1("Estimated Package Depths")
         estimated_depths = self.compute_estimated_depths(specs)
-        print("computed")
         for pkg_name, depth in sorted(estimated_depths.items()):
             self.gen.fact(fn.level(pkg_name, depth))
         self.gen.newline()
-        print("done")
 
         # once we've done a full traversal and know possible versions, check that the
         # requested solve is at least consistent.
