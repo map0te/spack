@@ -2398,15 +2398,17 @@ opt_criterion(0, "low", "", "penalty on symmetric duplicates").
 #minimize{
     Weight@(N+built_offset+(Level*level_opt)),ProviderNode,X,Virtual
     : provider_weight(ProviderNode, node(X, Virtual), Weight),
-      build_priority(ProviderNode, built_offset),
-      level(ProviderNode, Level),
+      build_priority(ParentNode, built_offset),
+      level(ParentNode, Level),
+      attr("virtual_on_edge", ParentNode, ProviderNode, Virtual),
       opt_criterion(N, "built", "level", "preferred providers")
 }.
 #minimize{
     Weight@(N+concr_offset+(Level*level_opt)),ProviderNode,X,Virtual
     : provider_weight(ProviderNode, node(X, Virtual), Weight),
-      build_priority(ProviderNode, concr_offset),
-      level(ProviderNode, Level),
+      build_priority(ParentNode, concr_offset),
+      level(ParentNode, Level),
+      attr("virtual_on_edge", ParentNode, ProviderNode, Virtual),
       opt_criterion(N, "concr", "level", "preferred providers")
 }.
 
