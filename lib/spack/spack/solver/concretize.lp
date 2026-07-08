@@ -2399,6 +2399,7 @@ opt_criterion(0, "low", "", "penalty on symmetric duplicates").
     Weight@(N+built_offset+(Level*level_opt)),ProviderNode,X,Virtual
     : provider_weight(ProviderNode, node(X, Virtual), Weight),
       build_priority(ParentNode, built_offset),
+      not language(Virtual),
       level(ParentNode, Level),
       attr("virtual_on_edge", ParentNode, ProviderNode, Virtual),
       opt_criterion(N, "built", "level", "preferred providers")
@@ -2408,6 +2409,7 @@ opt_criterion(0, "low", "", "penalty on symmetric duplicates").
     : provider_weight(ProviderNode, node(X, Virtual), Weight),
       build_priority(ParentNode, concr_offset),
       level(ParentNode, Level),
+      not language(Virtual),
       attr("virtual_on_edge", ParentNode, ProviderNode, Virtual),
       opt_criterion(N, "concr", "level", "preferred providers")
 }.
