@@ -2222,7 +2222,7 @@ level(Package, L) :- attr("node", Package), level(Dependent, L+1), depends_on(De
 % Constants for calculating optimization criterion priority
 %   level_opt is level & fixed per level
 %   indep_opt is per high/hinge/low
-#const max_depth = 4.
+#const max_depth = 16.
 #const level_opt = 16.
 #const indep_opt = 8.
 % location
@@ -2401,6 +2401,7 @@ opt_criterion(0, "low", "", "penalty on symmetric duplicates").
       build_priority(ParentNode, built_offset),
       not language(Virtual),
       level(ParentNode, Level),
+      not language(Virtual),
       attr("virtual_on_edge", ParentNode, ProviderNode, Virtual),
       opt_criterion(N, "built", "level", "preferred providers")
 }.
@@ -2417,7 +2418,8 @@ opt_criterion(0, "low", "", "penalty on symmetric duplicates").
 #minimize{
     1@(N+concr_offset+(Level*level_opt)),Hash
     : compiler_penalty_from_reuse(Hash),
-      level(node(Hash, Package), Level),
+      level(node(X, Package), Level),
+      attr("hash", node(X, Package), Hash),
       opt_criterion(N, "concr", "level", "compiler penalty from reuse")
 }.
 
